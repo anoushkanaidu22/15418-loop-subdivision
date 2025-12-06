@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iomanip>
 #include <algorithm>
+#include <chrono>
 
 #ifndef M_PI
     #define M_PI 3.14159265358979323846
@@ -54,7 +55,12 @@ std::pair<int, int> make_edge_key(int i, int j) {
 }
 
 void loop_subdivide_sequential(Mesh& mesh) {
+    
+    using clock = std::chrono::high_resolution_clock;
+
+    auto initialization_start = clock::now();
     //building adjacency
+
     mesh.neighbors.assign(mesh.V.size(), std::vector<int>());
     mesh.edge_faces.clear();
     std::vector<std::map<int, bool>> unique_neighbors(mesh.V.size());
@@ -86,6 +92,12 @@ void loop_subdivide_sequential(Mesh& mesh) {
             mesh.neighbors[i].push_back(pair.first);
         }
     }
+
+    auto initialization_end = clock::now();
+    double initialization_seconds = std::chrono::duration<double>(initialization_end - initialization_start).count();
+    std::cout << "Initialization time: " 
+              << std::fixed << std::setprecision(6) 
+              << initialization_seconds << " seconds\n";
 
     //phase 1: new positions for even/old verticies
     std::vector<Vec3> V_even(mesh.V.size());
@@ -273,10 +285,28 @@ int main(int argc, char* argv[]) {
     Mesh mesh;
     if (!load_obj(input_filename, mesh)) return 1;
 
+    using clock = std::chrono::high_resolution_clock;
+
+    auto total_start = clock::now();
+
     for (int i = 1; i <= num_iters; ++i) {
         std::cout << "--- Iteration " << i << "/" << num_iters << " ---" << std::endl;
+
+        auto iter_start = clock::now();
         loop_subdivide_sequential(mesh);
+        auto iter_end = clock::now();
+
+        double iter_seconds = std::chrono::duration<double>(iter_end - iter_start).count();
+        std::cout << "Iteration " << i << " time: " 
+                  << std::fixed << std::setprecision(6) 
+                  << iter_seconds << " seconds\n";
     }
+
+    auto total_end = clock::now();
+    double total_seconds = std::chrono::duration<double>(total_end - total_start).count();
+    std::cout << "Total subdivision time (" << num_iters << " iterations): "
+              << std::fixed << std::setprecision(6) 
+              << total_seconds << " seconds\n";
 
     size_t dot_pos = input_filename.find_last_of('.');
     std::string output_filename = (dot_pos == std::string::npos)
@@ -286,3 +316,4 @@ int main(int argc, char* argv[]) {
     save_obj(output_filename, mesh);
     return 0;
 }
+

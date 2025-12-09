@@ -154,25 +154,31 @@ __global__ void identify_unique_edges_kernel(
     if (idx >= num_raw_edges) return;
 
     int2 my_key = sorted_keys[idx];
+
     bool is_start = (idx == 0) || (sorted_keys[idx-1].x != my_key.x || sorted_keys[idx-1].y != my_key.y);
 
     if (is_start) {
         int unique_id = atomicAdd(edge_counter, 1);
         unique_edges[unique_id] = my_key;
 
-        bool has_twin = (idx + 1 < num_raw_edges) &&
-                        (sorted_keys[idx+1].x == my_key.x && sorted_keys[idx+1].y == my_key.y);
+        int2 opposites = make_int2(-1, -1);
+        int opp_count = 0;
 
-        EdgeInfo info1 = sorted_infos[idx];
-        int2 opposites = make_int2(info1.opposite_v, -1);
+        int k = idx;
+        while (k < num_raw_edges) {
+            int2 next_key = sorted_keys[k];
+            if (next_key.x != my_key.x || next_key.y != my_key.y) break;
 
-        int* face_map_ptr = (int*)face_edge_indices;
-        face_map_ptr[3 * info1.face_idx + info1.edge_order] = unique_id;
+            EdgeInfo info = sorted_infos[k];
 
-        if (has_twin) {
-            EdgeInfo info2 = sorted_infos[idx+1];
-            opposites.y = info2.opposite_v;
-            face_map_ptr[3 * info2.face_idx + info2.edge_order] = unique_id;
+            int* face_map_ptr = (int*)face_edge_indices;
+            face_map_ptr[3 * info.face_idx + info.edge_order] = unique_id;
+
+            if (opp_count == 0) opposites.x = info.opposite_v;
+            else if (opp_count == 1) opposites.y = info.opposite_v;
+
+            opp_count++;
+            k++;
         }
 
         edge_opposites[unique_id] = opposites;
@@ -346,6 +352,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Usage: ./loop_cuda <input.obj> [iterations]\n";
         return 1;
     }
+    std::string input_filename = argv[1];
     int iterations = (argc > 2) ? std::stoi(argv[2]) : 1;
 
     HostMesh h_mesh;
@@ -432,8 +439,15 @@ int main(int argc, char* argv[]) {
     std::vector<Face> final_faces(d_mesh.num_faces);
     cudaMemcpy(final_vertices.data(), d_mesh.vertices, d_mesh.num_vertices * sizeof(Vertex), cudaMemcpyDeviceToHost);
     cudaMemcpy(final_faces.data(), d_mesh.faces, d_mesh.num_faces * sizeof(Face), cudaMemcpyDeviceToHost);
-    save_obj_final("cuda_final_output.obj", final_vertices, final_faces);
-    std::cout << "\nSaved 'cuda_final_output.obj'.\n";
+
+    size_t dot_pos = input_filename.find_last_of('.');
+    std::string output_filename = (dot_pos == std::string::npos)
+        ? input_filename + "_cuda_subdiv_" + std::to_string(iterations) + ".obj"
+        : input_filename.substr(0, dot_pos) + "_cuda_subdiv_" + std::to_string(iterations) + ".obj";
+
+    save_obj_final(output_filename, final_vertices, final_faces);
+    std::cout << "\nSaved '" << output_filename << "'.\n";
+
 
     cudaFree(d_mesh.vertices);
     cudaFree(d_mesh.faces);
